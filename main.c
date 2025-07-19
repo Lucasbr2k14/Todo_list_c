@@ -7,6 +7,26 @@
 #define max_line_size 1024
 #define buffer 50
 
+typedef enum Status {
+    PROGRESS,
+    COMPLETED,
+    PEDDING,
+} Status;
+
+typedef enum {
+    C_RESET = 0,
+    C_BOLD  = 1,
+    C_UNDERLINE = 4,
+    C_BLACK = 30,
+    C_RED = 31,
+    C_GREEN = 32,
+    C_YELLOW = 33,
+    C_BLUE = 34,
+    C_MAGENTA = 35,
+    C_CYAN = 36,
+    C_WHITE = 37,
+} TermColor;
+
 typedef struct {
     short day;
     short month;
@@ -16,16 +36,11 @@ typedef struct {
     int seconds;
 } Date;
 
-typedef enum {
-    PROGRESS,
-    COMPLETED,
-    PEDDING,
-} Status;
 
 typedef struct {
     char *name;
     char *description;
-    unsigned int id;
+    int id;
     bool date_limit;
     Date *date;
     Status Status;
@@ -37,7 +52,10 @@ typedef struct {
     Task** tasks;
 } Task_list;
 
-char* string_status(Status s) {
+// --- Funções para status ---
+
+// Converter status em string
+char* status_string(Status s) {
     switch (s) {
         case PROGRESS:
             return "Progress";
@@ -53,6 +71,13 @@ char* string_status(Status s) {
     }
 }
 
+// Converter string para status
+Status string_status(char *s) {
+    if(strcmp(s, "Progress") == 0) return PROGRESS;
+    if(strcmp(s, "Completed") == 0) return COMPLETED;
+    if(strcmp(s, "Pedding") == 0) return PEDDING; 
+}
+
 // Função para criar uma hash que vai o nosso id da tarefa
 unsigned int create_id(const char *n, const char *d) {
     unsigned int id = 0;
@@ -62,7 +87,7 @@ unsigned int create_id(const char *n, const char *d) {
     }
 
     while (*d != '\0') {
-        id += (id * 31) + (unsigned int) (*d++);
+        id = (id * 31) + (unsigned int) (*d++);
     }
 
     return id % 10000;
@@ -82,7 +107,7 @@ Date *create_date(short day, short month, int year, int hour, int minutes, int s
     return date;
 }
 
-// Formatar a data e hora para o padrão DD/MM/YY HH:SS:MM
+// Formatar a data e hora para o padrão DD/MM/YYYY HH:MM:SS
 char *format_date(Date *d, bool a) {
     char *str = malloc(40);
 
@@ -97,10 +122,30 @@ char *format_date(Date *d, bool a) {
     return str;  
 }
 
+// Converter o formato DD/MM/YYYY HH:MM:SS
+Date* string_date(char* str) {
+    // Separa data e hora
+    char *date = strtok(str, " ");
+    char *hour = strtok(NULL, " ");
+
+
+    // Sepra todos os valores da data
+    char *d = strtok(date, "/");
+    char *m = strtok(NULL, "/");
+    char *y = strtok(NULL, "/");
+
+    // Sperata todos valores da hora
+    char *h = strtok(hour, ":");
+    char *n = strtok(NULL, ":");
+    char *s = strtok(NULL, ":");
+
+    return create_date(atoi(d), atoi(m), atoi(y), atoi(h), atoi(n), atoi(s));
+}
+
 // --- Funções para tarefa ---
 
 // Construtor de uma tarefa
-Task* create_task(char *name, char *des, bool date_limit, Date *date) {
+Task* create_task(char *name, char *des, Status status, bool date_limit, Date *date, int id) {
     Task *task = malloc(sizeof(Task));
 
     task->name = (char*) malloc(sizeof (char) * strlen(name) + 1);
@@ -108,11 +153,16 @@ Task* create_task(char *name, char *des, bool date_limit, Date *date) {
 
     task->date_limit = date_limit;
     task->date = date;
+    task->Status = status;
 
     strcpy(task->name, name);
     strcpy(task->description, des);
 
-    task->id = create_id(name, des);
+    if (id == 0) {
+        task->id = create_id(name, des);
+    } else {
+        task->id = id;
+    }
 
     return task;
 }
@@ -177,12 +227,12 @@ void tasks_show(Task_list* tl) {
 
 // Salvar tarefa no arquivo
 void save_task(FILE *f, Task *t) {    
-    char* str_status = string_status(t->Status);
+    char* str_status = status_string(t->Status);
     char* str_date   = format_date(t->date, t->date_limit);
 
     fprintf(
         f, 
-        "%s | %s | %s | %s | %s | %i\n",
+        "%s|%s|%s|%s|%s|%i\n",
         t->name,
         t->description,
         str_status,  
@@ -207,17 +257,89 @@ int save(Task_list* tl) {
     return 0;
 }
 
-int main() {
+// Montar task apartir de uma string
+Task* task_load(char *s) {
+    
+    char *name  = strtok(s, "|");
+    char *des   = strtok(NULL, "|");
+    char *prog  = strtok(NULL, "|");
+    char *datel = strtok(NULL, "|");
+    char *date  = strtok(NULL, "|");
+    char *id    = strtok(NULL, "|"); 
+
+    return create_task(
+        name,
+        des,
+        string_status(prog),
+        (strcmp(datel, "true") == 0) ? true : false,
+        string_date(date),
+        atoi(id)
+    );
+
+}
+
+// Ler arquivo de entrada com tarefas
+int load(Task_list* tl) {
+    FILE *f = fopen(file_data, "r");
+    
+    if (f == NULL) return 1;
+
+    char *line = malloc(max_line_size);
+    line[strcspn(line, "\n")] = '\0';
+
+    while(fgets(line, max_line_size, f)) {
+        add_task(tl,task_load(line));
+    }
+
+    fclose(f);
+    return 0;
+}
+// --- Menu ---
+
+/*
+Criando tabela do formato
++----------------+------------------+-------------+----------+-----+
+|Tarefa          |Descrição         |Status       |Date      |Hour |
++----------------+------------------+-------------+----------+-----+
+|Limpar quarto   |Limpar Isso que eu|Pedding      |15/05/2025|21:00|
+|                |chamo de quarto   |             |          |     |
++----------------+------------------+-------------+----------+-----+
+*/
+
+void task_table(Task_list *tl) {
+    printf("+----------------+-----------------------+-------------+----------+-----+\n");
+    printf("|Task            |Description            |Status       |Date      |Hour |\n");
+    printf("+----------------+-----------------------+-------------+----------+-----+\n");
+    
+    for (int i = 0; i < tl->pos; i++) {
+        
+        char *date_format = format_date(tl->tasks[i]->date, tl->tasks[i]->date_limit);
+        char *date = strtok(date_format, " ");
+        char *hour = strtok(NULL, " ");
+
+        printf("|%-16.16s|%-23.23s|%-13.13s|%-10.10s|%-5.5s|\n",
+            tl->tasks[i]->name,
+            tl->tasks[i]->description,
+            status_string(tl->tasks[i]->Status),
+            date,
+            hour
+        );
+
+
+    }
+
+    printf("+----------------+-----------------------+-------------+----------+-----+\n");
+}
+
+
+
+int main(int argv, char **argc) {
 
     Task_list tl = create_list();
 
-    add_task(&tl, create_task("Limpar chão", "Limpar esse chão", false, NULL));
-    add_task(&tl, create_task("AAAA", "BBBBB", false, NULL));
-    add_task(&tl, create_task("asdad", "ljkkjlh", false, NULL));
+    load(&tl);
 
-    tasks_show(&tl);
-
-    save(&tl);
+    task_table(&tl);
 
     return 0;
 }
