@@ -5,7 +5,7 @@
 
 #define file_data "data.csv"
 #define max_line_size 1024
-#define buffer 50
+#define buffer 2000
 
 typedef enum Status {
     PROGRESS,
@@ -35,7 +35,6 @@ typedef struct {
     int minutes;
     int seconds;
 } Date;
-
 
 typedef struct {
     char *name;
@@ -180,21 +179,6 @@ void change_task_status(Task* task, Status s) {
     task->Status = s;
 }
 
-// Mostrar tarefa no terminal
-void show_task(Task *t) {
-    printf("Name: %s, Description: %s, Status: %i ID: %i \n", t->name, t->description, t->Status, t->id);
-    if (t->date_limit == true) {
-        printf("%i/%i/%i %i:%i:%i\n", 
-            t->date->day, 
-            t->date->month,
-            t->date->year,
-            t->date->hour,
-            t->date->minutes,
-            t->date->seconds
-        );
-    }
-}
-
 // --- Lista de tarefas ---
 
 // Construtor da lista
@@ -216,12 +200,6 @@ int add_task(Task_list* tl, Task* t) {
     tl->pos++;
 }
 
-// Mostrar lista
-void tasks_show(Task_list* tl) {
-    for (int i = 0; i < tl->pos; i++) {
-        printf("name: %s description: %s id: %i \n", tl->tasks[i]->name, tl->tasks[i]->description, tl->tasks[i]->id);
-    }
-}
 
 // --- Arquivo ---
 
@@ -294,6 +272,7 @@ int load(Task_list* tl) {
     fclose(f);
     return 0;
 }
+
 // --- Menu ---
 
 /*
@@ -319,27 +298,98 @@ void task_table(Task_list *tl) {
 
         printf("|%-16.16s|%-23.23s|%-13.13s|%-10.10s|%-5.5s|\n",
             tl->tasks[i]->name,
-            tl->tasks[i]->description,
+             tl->tasks[i]->description,
             status_string(tl->tasks[i]->Status),
             date,
             hour
         );
-
-
     }
 
     printf("+----------------+-----------------------+-------------+----------+-----+\n");
 }
 
+// --- Comandos ---
+
+/*
+Commands
+>> add "Task name" "Description task" 00/00/00 00:00
+>> edit {Task id} {name, description, status, date, hour}
+>> show
+>> save Save on file
+>> exit
+*/
+
+
+void command(const char *command, bool *l, Task_list *tl) {
+    char *test = malloc(strlen(command) + 1);
+    
+    if(strcmp(command, "exit") == 0) {
+        *(l) = false;
+    } else if (strcmp(command, "show") == 0) {
+        task_table(tl);
+    } else if (strcmp(command, "save") == 0) {
+        save(tl);
+    } else if (strcmp(command, "add") == 0) {
+
+        char task_name[64];
+        char task_desc[1024];
+        char date_valid[6]; 
+        char date[32];
+
+        printf("Task name: ");
+        fgets(task_name, sizeof(task_name), stdin);
+        task_name[strcspn(task_name, "\n")] = '\0';
+        
+        printf("Desciption: ");
+        fgets(task_desc, sizeof(task_desc), stdin);
+        task_desc[strcspn(task_desc, "\n")] = '\0';
+
+        printf("With date [Y][N]: ");
+        fgets(date_valid, sizeof(date_valid), stdin);
+        date_valid[strcspn(date_valid, "\n")] = '\0';
+        bool date_limt = strcmp(date_valid, "Y") == 0 ? true : false;
+
+        add_task(tl, create_task(
+            task_name,
+            task_desc,
+            date_limt,
+            PEDDING,
+            create_date(0,0,0,0,0,0),
+            0
+        ));
+    
+    } else if (strcmp(command, "clear") == 0) {
+        system("clear");
+    } else {
+        printf("Command %s not found\n", command);
+    }
+    
+
+
+    free(test);
+}
 
 
 int main(int argv, char **argc) {
 
     Task_list tl = create_list();
 
+    printf("Load file\n");
     load(&tl);
+    printf("Load from file\n");
 
-    task_table(&tl);
+    bool m = true;
+
+    while (m) {
+        printf(">> ");
+        char input[1024];
+        fgets(input, sizeof(input), stdin);
+        input[strcspn(input, "\n")] = '\0';
+        
+        command(input, &m, &tl);
+
+    }
+
 
     return 0;
 }
